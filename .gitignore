@@ -26,5 +26,9 @@ dist/
 playwright-report/
 playwright/.cache/
 
+# Runtime artifacts
+cache/
+logs/
+
 # OS files
 .DS_Store

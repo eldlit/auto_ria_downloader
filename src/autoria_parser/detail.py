@@ -65,6 +65,7 @@ class ListingScraper:
         dedupe: Set[str] = set()
         results: List[ListingResult] = []
         lock = asyncio.Lock()
+        total_count = len(urls)
 
         queue: asyncio.Queue[str] = asyncio.Queue()
         for url in urls:
@@ -75,7 +76,9 @@ class ListingScraper:
         for handle in browsers:
             for _ in range(per_browser_workers):
                 workers.append(
-                    asyncio.create_task(self._detail_worker(handle, queue, results, dedupe, lock))
+                    asyncio.create_task(
+                        self._detail_worker(handle, queue, results, dedupe, lock, total_count)
+                    )
                 )
 
         await queue.join()
@@ -93,6 +96,7 @@ class ListingScraper:
         results: List[ListingResult],
         dedupe: Set[str],
         lock: asyncio.Lock,
+        total_count: int,
     ) -> None:
         async def open_page() -> Tuple[BrowserContext, Page]:
             context = await handle.browser.new_context()
@@ -119,6 +123,9 @@ class ListingScraper:
                                 else:
                                     dedupe.update(normalized_phones)
                                     results.append(record)
+                                    processed = len(results)
+                                    if processed % 100 == 0 or processed == total_count:
+                                        logger.info("Scraped %s/%s listing(s)", processed, total_count)
                         break
                     except ProxyDeniedError as exc:
                         attempt += 1
