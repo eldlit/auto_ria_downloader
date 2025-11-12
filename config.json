@@ -1,0 +1,124 @@
+{
+  "catalogXpaths": [
+    "//div[@id='items']//a[contains(@class,'product-card') and contains(@class,'link')]",
+    "//div[contains(@class,'items-list')]//a[contains(@class,'product-card')]",
+    "//a[@data-car-id and contains(@class,'product-card')]"
+  ],
+  "paginationXpaths": [
+    "//nav[contains(@class,'pagination')]//button[@aria-label='Next' and not(@disabled)]",
+    "//nav[contains(@class,'pagination')]//a[@class='page-link' and span[text()='Next']]",
+    "//div[contains(@class,'pagination')]//a[contains(@class,'page-link') and contains(@href,'page=')]"
+  ],
+  "phoneButtonXpaths": [
+    "//button[contains(@class,'phone')]",
+    "//a[contains(@class,'show-phone')]",
+    "//div[@class='phone_show_link']",
+    "//button[@class='show-phone']",
+    "//button[@data-action='showBottomPopUp' and contains(@class,'conversion')]",
+    "//div[@id='sellerInfo']//button[contains(@class,'conversion')]"
+  ],
+  "dataFields": [
+    {
+      "name": "title",
+      "xpathList": [
+        "//h1[@class='head']",
+        "//h1[contains(@class,'heading')]",
+        "//div[@class='head-title']//h1",
+        "//div[@id='basicInfoTitle']//h1",
+        "//div[@id='basicInfo']//h1[contains(@class,'titleL')]"
+      ]
+    },
+    {
+      "name": "phone",
+      "xpathList": [
+        "//a[@class='phone bold']",
+        "//div[contains(@class,'seller-phones')]//a",
+        "//a[contains(@class,'show-phone')]",
+        "//span[contains(@class,'phone-number')]",
+        "//div[@id='sellerInfo']//button[contains(@class,'conversion')]//span",
+        "//div[@id='sellerInfo']//span[contains(text(),'XXX')]"
+      ]
+    },
+    {
+      "name": "name",
+      "xpathList": [
+        "//div[@class='seller_info_name']",
+        "//div[contains(@class,'seller-name')]",
+        "//span[@class='seller-name']",
+        "//div[@id='sellerInfoUserName']//span",
+        "//div[@id='sellerInfo']//span[contains(@class,'titleM')]"
+      ]
+    },
+    {
+      "name": "city",
+      "xpathList": [
+        "//dd[@class='seller_info_location']",
+        "//div[@class='seller_info_area']",
+        "//span[contains(@class,'location')]",
+        "//div[contains(@class,'seller-info-location')]",
+        "//div[@id='basicInfoTableMainInfoGeo']//span",
+        "//div[@id='basicInfo']//div[contains(@id,'Geo')]//span"
+      ]
+    },
+    {
+      "name": "date",
+      "xpathList": [
+        "//div[@class='footer_box']//span[contains(@class,'date')]",
+        "//span[@class='date-created']",
+        "//div[contains(@class,'publication-date')]",
+        "//span[contains(@class,'auto-date')]"
+      ]
+    },
+    {
+      "name": "price",
+      "xpathList": [
+        "//div[@class='price_value']//strong",
+        "//span[@class='price']",
+        "//div[contains(@class,'price-ticket')]",
+        "//div[contains(@class,'price_value')]",
+        "//div[@id='basicInfoPrice']//strong",
+        "//div[@id='sidePrice']//strong"
+      ]
+    }
+  ],
+  "parsing": {
+    "threads": 1,
+    "delayBetweenRequests": { "min": 2, "max": 5 },
+    "pageLoadTimeout": 30000,
+    "waitForPaginationTimeout": 5000,
+    "listingsPerPage": 100
+  },
+  "errorRetryTimes": 3,
+  "proxy": {
+    "enabled": true,
+    "rotation": true,
+    "list": [
+      "77.47.144.42:50100:mojloto5ek:LJPyLniwBV",
+      "95.135.59.51:50100:mojloto5ek:LJPyLniwBV",
+      "185.2.213.182:50100:mojloto5ek:LJPyLniwBV",
+      "95.134.212.135:50100:mojloto5ek:LJPyLniwBV",
+      "45.13.189.198:50100:mojloto5ek:LJPyLniwBV",
+      "91.228.13.87:50100:mojloto5ek:LJPyLniwBV",
+      "195.211.189.180:50100:mojloto5ek:LJPyLniwBV",
+      "195.178.134.146:50100:mojloto5ek:LJPyLniwBV",
+      "91.124.110.108:50100:mojloto5ek:LJPyLniwBV",
+      "94.154.42.110:50100:mojloto5ek:LJPyLniwBV"
+    ]
+  },
+  "cache": {
+    "enabled": true,
+    "directory": "./cache",
+    "cacheListings": true,
+    "cacheCatalog": false
+  },
+  "output": {
+    "file": "output.csv",
+    "encoding": "utf-8",
+    "delimiter": ";"
+  },
+  "playwright": {
+    "headless": true,
+    "detailConcurrency": 1,
+    "maxBrowsers": 5
+  }
+}

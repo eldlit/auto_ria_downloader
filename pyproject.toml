@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autoria-parser"
+version = "0.1.0"
+description = "Playwright-based scraper for auto.ria.com catalogues"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "AutoriaParser" }
+]
+dependencies = [
+  "playwright>=1.47.0,<2.0.0",
+  "pydantic>=2.7.0,<3.0.0",
+  "httpx>=0.27.0,<0.28.0",
+  "aiofiles>=23.2.1,<24.0.0",
+  "tenacity>=8.2.3,<9.0.0",
+  "rich>=13.7.1,<14.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0,<9.0.0",
+  "pytest-asyncio>=0.23.7,<0.24.0",
+  "ruff>=0.5.0,<0.6.0"
+]
+
+[project.scripts]
+autoria-parser = "autoria_parser.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
