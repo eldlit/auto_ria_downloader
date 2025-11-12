@@ -28,8 +28,33 @@ Python-based Playwright scraper for [auto.ria.com](https://auto.ria.com) catalog
 4. Put one or more search-result URLs into `input.txt` (one per line).
 5. Update `config.json` with the selectors, proxy list, caching preferences, and timing knobs you want to use.
 6. Run the CLI: `python -m autoria_parser --config config.json --input input.txt`.
+   - Add `--clear-cache` to wipe the configured cache directory before scraping when you want to start fresh.
 
 The initial implementation only wires up configuration and CLI plumbing so that we can plug in Playwright-driven scraping logic step by step.
+
+## Windows Setup
+
+1. Install the latest Python 3.x (64-bit) from [python.org](https://www.python.org/downloads/windows/) and enable the “Add python.exe to PATH” checkbox during setup.
+2. Open **PowerShell** and allow script execution for the current session (required for activating virtual environments): `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned`.
+3. Create and activate a virtual environment:
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+4. Upgrade pip and install dependencies (editable install keeps local changes live):
+   ```powershell
+   python -m pip install --upgrade pip
+   pip install -e ".[dev]"
+   ```
+5. Install the Playwright browser binaries (once per machine):
+   ```powershell
+   playwright install
+   ```
+6. Populate `input.txt` and `config.json`, then run the scraper:
+   ```powershell
+   python -m autoria_parser --config config.json --input input.txt --clear-cache
+   ```
+   Omit `--clear-cache` if you want to reuse the existing cache directory between runs.
 
 ## Configuration Notes
 

@@ -315,8 +315,7 @@ class CatalogCrawler:
         try:
             await page.wait_for_load_state("networkidle", timeout=self._page_timeout)
         except PlaywrightTimeoutError:
-            logger.warning("Timed out waiting for networkidle after navigation")
-            return False
+            logger.warning("Timed out waiting for networkidle after navigation; falling back to selector checks.")
 
         await self._wait_for_catalog_ready(page)
 

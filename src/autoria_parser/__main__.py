@@ -15,7 +15,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     setup_logging(args.log_level)
     logging.getLogger(__name__).debug("Starting Autoria parser")
     try:
-        asyncio.run(run(args.config, args.input, dry_run=args.dry_run))
+        asyncio.run(run(args.config, args.input, dry_run=args.dry_run, clear_cache=args.clear_cache))
     except KeyboardInterrupt:
         logging.getLogger(__name__).warning("Interrupted by user")
 

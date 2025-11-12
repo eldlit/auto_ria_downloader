@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
@@ -16,17 +17,34 @@ from .playwright_client import PlaywrightSessionManager
 logger = logging.getLogger(__name__)
 
 
+def _clear_cache_directory(cache_dir: Path) -> None:
+    """Remove all cached files before a new run."""
+    path = Path(cache_dir).expanduser()
+    if not path.exists():
+        logger.info("Cache directory %s does not exist; nothing to clear.", path)
+    else:
+        logger.info("Clearing cache directory %s", path)
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    path.mkdir(parents=True, exist_ok=True)
+
+
 @dataclass
 class AppState:
     config: AppConfig
     catalog_urls: List[str]
 
 
-async def run(config_path: Path, input_path: Path, dry_run: bool = False) -> None:
+async def run(config_path: Path, input_path: Path, dry_run: bool = False, clear_cache: bool = False) -> None:
     """Main coroutine executed by the CLI."""
     config = load_config(config_path)
     catalog_urls = read_input_urls(input_path)
     state = AppState(config=config, catalog_urls=catalog_urls)
+
+    if clear_cache:
+        _clear_cache_directory(state.config.cache.directory)
 
     logger.info("Loaded %s catalog URL(s)", len(state.catalog_urls))
     logger.info("Configured %s data fields", len(state.config.dataFields))
@@ -35,7 +53,6 @@ async def run(config_path: Path, input_path: Path, dry_run: bool = False) -> Non
         logger.info("Dry-run flag enabled; skipping Playwright bootstrap")
         return
 
-    # TODO: implement catalog pagination, listing scraping, caching, and output generation.
     async with PlaywrightSessionManager(state.config, headless=state.config.playwright.headless) as manager:
         logger.info("Playwright launched (%s browser session(s))", manager.browser_count)
         crawler = CatalogCrawler(state.config, manager)
