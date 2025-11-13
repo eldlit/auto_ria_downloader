@@ -117,8 +117,8 @@
     "delimiter": ";"
   },
   "playwright": {
-    "headless": true,
+    "headless": false,
     "detailConcurrency": 1,
-    "maxBrowsers": 5
+    "maxBrowsers": 1
   }
 }

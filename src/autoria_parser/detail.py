@@ -157,7 +157,7 @@ class ListingScraper:
             return cache_hit
 
         try:
-            await page.goto(url, timeout=self._page_timeout)
+            await page.goto(url, timeout=self._page_timeout, wait_until="domcontentloaded")
         except PlaywrightTimeoutError:
             raise
         except PlaywrightError as exc:
