@@ -120,7 +120,7 @@ class CatalogCrawler:
     async def _crawl_single_catalog(self, page: Page, url: str) -> Set[str]:
         url = self._apply_page_size(url)
         try:
-            await page.goto(url, timeout=self._page_timeout)
+            await page.goto(url, timeout=self._page_timeout, wait_until="domcontentloaded")
         except PlaywrightTimeoutError:
             raise
         except PlaywrightError as exc:
@@ -291,10 +291,9 @@ class CatalogCrawler:
         previous_url = page.url
         target = self._apply_page_size(target)
         try:
-            await page.goto(target, timeout=self._page_timeout)
+            await page.goto(target, timeout=self._page_timeout, wait_until="domcontentloaded")
         except PlaywrightTimeoutError:
-            logger.warning("Timed out while navigating to %s", target)
-            return False
+            logger.warning("Timed out while navigating to %s; continuing with partial load.", target)
         except PlaywrightError as exc:
             if _is_denied_error(exc):
                 raise ProxyDeniedError(str(exc))
