@@ -8,7 +8,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Awaitable, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from playwright.async_api import BrowserContext, Locator, Page, TimeoutError as PlaywrightTimeoutError
 from playwright._impl._errors import Error as PlaywrightError
@@ -37,6 +37,12 @@ class ListingResult:
     phones: List[str]
 
 
+@dataclass
+class ScrapeSummary:
+    count: int
+    results: List[ListingResult]
+
+
 class ListingScraper:
     """Scrapes listing detail pages, reveals phone numbers, caches results, and deduplicates."""
 
@@ -53,10 +59,16 @@ class ListingScraper:
         if self._cache_enabled:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
 
-    async def scrape(self, listing_urls: Sequence[str]) -> List[ListingResult]:
+    async def scrape(
+        self,
+        listing_urls: Sequence[str],
+        *,
+        batch_size: int = 100,
+        on_batch: Optional[Callable[[List[ListingResult]], Awaitable[None]]] = None,
+    ) -> ScrapeSummary:
         urls = [url.strip() for url in listing_urls if url.strip()]
         if not urls:
-            return []
+            return ScrapeSummary(count=0, results=[])
 
         browsers = list(self._manager.browsers)
         if not browsers:
@@ -64,7 +76,9 @@ class ListingScraper:
 
         dedupe: Set[str] = set()
         results: List[ListingResult] = []
+        batch: List[ListingResult] = []
         lock = asyncio.Lock()
+        progress = {"count": 0}
         total_count = len(urls)
 
         queue: asyncio.Queue[str] = asyncio.Queue()
@@ -77,7 +91,18 @@ class ListingScraper:
             for _ in range(per_browser_workers):
                 workers.append(
                     asyncio.create_task(
-                        self._detail_worker(handle, queue, results, dedupe, lock, total_count)
+                        self._detail_worker(
+                            handle,
+                            queue,
+                            results,
+                            batch,
+                            dedupe,
+                            lock,
+                            total_count,
+                            batch_size,
+                            on_batch,
+                            progress,
+                        )
                     )
                 )
 
@@ -86,17 +111,26 @@ class ListingScraper:
             worker.cancel()
         await asyncio.gather(*workers, return_exceptions=True)
 
-        logger.info("Listing scraping complete: %s rows (after dedupe)", len(results))
-        return results
+        if on_batch and batch:
+            await on_batch(list(batch))
+            batch.clear()
+
+        total_processed = progress["count"]
+        logger.info("Listing scraping complete: %s rows (after dedupe)", total_processed)
+        return ScrapeSummary(count=total_processed, results=[] if on_batch else results)
 
     async def _detail_worker(
         self,
         handle: BrowserHandle,
         queue: asyncio.Queue[str],
         results: List[ListingResult],
+        batch: List[ListingResult],
         dedupe: Set[str],
         lock: asyncio.Lock,
         total_count: int,
+        batch_size: int,
+        on_batch: Optional[Callable[[List[ListingResult]], Awaitable[None]]],
+        progress: Dict[str, int],
     ) -> None:
         async def open_page() -> Tuple[BrowserContext, Page]:
             context = await handle.browser.new_context()
@@ -112,6 +146,8 @@ class ListingScraper:
                     break
 
                 attempt = 0
+                chunk_to_flush: Optional[List[ListingResult]] = None
+                processed = None
                 while attempt <= self._config.errorRetryTimes:
                     try:
                         record = await self._process_listing(page, url)
@@ -122,11 +158,16 @@ class ListingScraper:
                                     logger.info("Skipping listing %s due to duplicate phone", url)
                                 else:
                                     dedupe.update(normalized_phones)
-                                    results.append(record)
-                                    processed = len(results)
-                                    if processed % 100 == 0 or processed == total_count:
-                                        logger.info("Scraped %s/%s listing(s)", processed, total_count)
-                        break
+                                    if on_batch:
+                                        batch.append(record)
+                                        if len(batch) >= batch_size:
+                                            chunk_to_flush = list(batch)
+                                            batch.clear()
+                                    else:
+                                        results.append(record)
+                                    progress["count"] += 1
+                                    processed = progress["count"]
+                            break
                     except ProxyDeniedError as exc:
                         attempt += 1
                         logger.warning(
@@ -145,6 +186,10 @@ class ListingScraper:
                         if attempt > self._config.errorRetryTimes:
                             logger.error("Giving up on listing %s after %s attempts", url, attempt)
                             break
+                if chunk_to_flush and on_batch:
+                    await on_batch(chunk_to_flush)
+                if processed and (processed % 100 == 0 or processed == total_count):
+                    logger.info("Scraped %s/%s listing(s)", processed, total_count)
                 queue.task_done()
         finally:
             await page.close()

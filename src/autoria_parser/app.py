@@ -6,12 +6,12 @@ import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from .catalog import CatalogCrawler
 from .config import AppConfig, load_config, read_input_urls
 from .detail import ListingScraper
-from .output import write_csv
+from .output import CSVWriter
 from .playwright_client import PlaywrightSessionManager
 
 logger = logging.getLogger(__name__)
@@ -64,12 +64,26 @@ async def run(config_path: Path, input_path: Path, dry_run: bool = False, clear_
             return
 
         scraper = ListingScraper(state.config, manager)
-        listing_results = await scraper.scrape(listing_urls)
-        logger.info("Scraped %s listing(s) after dedupe", len(listing_results))
+        writer: Optional[CSVWriter] = None
+        output_path: Optional[Path] = None
 
-        if not listing_results:
+        async def _write_batch(batch):
+            nonlocal writer, output_path
+            if writer is None:
+                writer = CSVWriter(state.config)
+                output_path = writer.path
+            writer.write_batch(batch)
+
+        try:
+            summary = await scraper.scrape(listing_urls, on_batch=_write_batch)
+        finally:
+            if writer is not None:
+                writer.close()
+
+        logger.info("Scraped %s listing(s) after dedupe", summary.count)
+
+        if summary.count == 0 or output_path is None:
             logger.warning("No listing data to write; CSV output skipped.")
             return
 
-        output_path = write_csv(listing_results, state.config)
         logger.info("Results written to %s", output_path)
