@@ -29,6 +29,7 @@ Python-based Playwright scraper for [auto.ria.com](https://auto.ria.com) catalog
 5. Update `config.json` with the selectors, proxy list, caching preferences, and timing knobs you want to use.
 6. Run the CLI: `python -m autoria_parser --config config.json --input input.txt`.
    - Add `--clear-cache` to wipe the configured cache directory before scraping when you want to start fresh.
+   - Alternatively use the helper scripts: `./run.sh --config config.json --input input.txt` (Linux/macOS) or `run.bat --config config.json --input input.txt` (Windows). Both include `--clear-cache` by default.
 
 The initial implementation only wires up configuration and CLI plumbing so that we can plug in Playwright-driven scraping logic step by step.
 

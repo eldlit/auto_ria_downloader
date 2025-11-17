@@ -10,6 +10,15 @@ from .config import AppConfig
 from .detail import ListingResult
 
 
+def _normalized_encoding(encoding: str) -> str:
+    return encoding.replace("-", "").replace("_", "").lower()
+
+
+def _needs_utf8_bom(encoding: str) -> bool:
+    normalized = _normalized_encoding(encoding)
+    return normalized in {"utf8", "utf"}
+
+
 class CSVWriter:
     """Incremental CSV writer that preserves the configured column order."""
 
@@ -20,8 +29,15 @@ class CSVWriter:
             self._field_names.append("url")
         self.path = _build_output_path(config)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle = self.path.open("w", newline="", encoding=config.output.encoding)
-        self._writer = csv.DictWriter(self._handle, fieldnames=self._field_names, delimiter=config.output.delimiter)
+        encoding = config.output.encoding or "utf-8"
+        self._handle = self.path.open("w", newline="", encoding=encoding)
+        if _needs_utf8_bom(encoding):
+            self._handle.write("\ufeff")
+        self._writer = csv.DictWriter(
+            self._handle,
+            fieldnames=self._field_names,
+            delimiter=config.output.delimiter,
+        )
         self._writer.writeheader()
         self._closed = False
 

@@ -145,7 +145,10 @@ class CatalogCrawler:
 
     async def _extract_catalog_links(self, page: Page) -> Set[str]:
         links: Set[str] = set()
-        selectors = self._catalog_locators or ["xpath=//a[@data-car-id]"]
+        selectors = self._catalog_locators or [
+            "xpath=//a[@data-car-id]",
+            "xpath=//section[contains(@class,'proposition')]//a[contains(@class,'proposition_link')]",
+        ]
         for selector in selectors:
             locator = page.locator(selector)
             try:

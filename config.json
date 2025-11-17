@@ -119,6 +119,6 @@
   "playwright": {
     "headless": false,
     "detailConcurrency": 1,
-    "maxBrowsers": 1
+    "maxBrowsers": 3
   }
 }
