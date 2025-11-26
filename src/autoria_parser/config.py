@@ -56,6 +56,7 @@ class OutputSettings(BaseModel):
 class DataField(BaseModel):
     name: str
     xpathList: List[str] = Field(default_factory=list)
+    xpathListAgro: List[str] = Field(default_factory=list)
 
 
 class PlaywrightSettings(BaseModel):
@@ -66,8 +67,11 @@ class PlaywrightSettings(BaseModel):
 
 class AppConfig(BaseModel):
     catalogXpaths: List[str] = Field(default_factory=list)
+    catalogXpathsAgro: List[str] = Field(default_factory=list)
     paginationXpaths: List[str] = Field(default_factory=list)
+    paginationXpathsAgro: List[str] = Field(default_factory=list)
     phoneButtonXpaths: List[str] = Field(default_factory=list)
+    phoneButtonXpathsAgro: List[str] = Field(default_factory=list)
     dataFields: List[DataField] = Field(default_factory=list)
     parsing: ParsingSettings = Field(default_factory=ParsingSettings)
     errorRetryTimes: int = Field(3, ge=0)

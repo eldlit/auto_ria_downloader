@@ -4,18 +4,33 @@
     "//div[contains(@class,'items-list')]//a[contains(@class,'product-card')]",
     "//a[@data-car-id and contains(@class,'product-card')]"
   ],
+  "catalogXpathsAgro": [
+    "//div[contains(@class,'search-results')]//div[contains(@class,'proposition')]//a[contains(@class,'proposition_link')]",
+    "//div[contains(@class,'na-gallery-view')]//div[contains(@class,'proposition')]//a[contains(@class,'proposition_link')]"
+  ],
   "paginationXpaths": [
     "//nav[contains(@class,'pagination')]//button[@aria-label='Next' and not(@disabled)]",
     "//nav[contains(@class,'pagination')]//a[@class='page-link' and span[text()='Next']]",
     "//div[contains(@class,'pagination')]//a[contains(@class,'page-link') and contains(@href,'page=')]"
   ],
+  "paginationXpathsAgro": [
+    "//div[contains(@class,'pager')]//a[contains(@href,'page=')]"
+  ],
   "phoneButtonXpaths": [
+    "//button[@data-action='showBottomPopUp' and contains(@class,'conversion')]",
+    "//button[@data-action='showBottomPopUp']",
+    "//div[@id='sellerInfo']//button[@data-action='showBottomPopUp']",
+    "//div[@id='sellerInfo']//button[contains(@class,'conversion')]",
     "//button[contains(@class,'phone')]",
     "//a[contains(@class,'show-phone')]",
     "//div[@class='phone_show_link']",
-    "//button[@class='show-phone']",
-    "//button[@data-action='showBottomPopUp' and contains(@class,'conversion')]",
-    "//div[@id='sellerInfo']//button[contains(@class,'conversion')]"
+    "//button[@class='show-phone']"
+  ],
+  "phoneButtonXpathsAgro": [
+    "//div[contains(@class,'sell-phone-btn')]//*[contains(text(),'Показать номер')]",
+    "//span[contains(@class,'button') and contains(text(),'Показать номер')]",
+    "//section[@id='seller_info']//div[contains(@class,'sell-phone-btn')]",
+    "//section[@id='seller_info']//span[contains(@class,'button--green')]"
   ],
   "dataFields": [
     {
@@ -25,7 +40,13 @@
         "//h1[contains(@class,'heading')]",
         "//div[@class='head-title']//h1",
         "//div[@id='basicInfoTitle']//h1",
-        "//div[@id='basicInfo']//h1[contains(@class,'titleL')]"
+        "//div[@id='basicInfo']//h1[contains(@class,'titleL')]",
+        "//div[@id='basicInfo']//h1",
+        "//h1[contains(@class,'title') and contains(@class,'bold')]",
+        "//h1[contains(@class,'common-text') and contains(@class,'titleL')]"
+      ],
+      "xpathListAgro": [
+        "//h1[contains(@class,'auto-head_title')]//strong"
       ]
     },
     {
@@ -36,7 +57,13 @@
         "//a[contains(@class,'show-phone')]",
         "//span[contains(@class,'phone-number')]",
         "//div[@id='sellerInfo']//button[contains(@class,'conversion')]//span",
-        "//div[@id='sellerInfo']//span[contains(text(),'XXX')]"
+        "//div[@id='sellerInfo']//span[contains(text(),'XXX')]",
+        "//div[@id='sellerInfo']//a[starts-with(@href,'tel:')]"
+      ],
+      "xpathListAgro": [
+        "//div[@id='seller_info']//div[starts-with(@data-key,'phone')]//a[starts-with(@href,'tel:')]",
+        "//div[contains(@class,'react_modal__body')]//a[starts-with(@href,'tel:')]",
+        "//section[@id='seller_info']//a[starts-with(@href,'tel:')]"
       ]
     },
     {
@@ -47,6 +74,10 @@
         "//span[@class='seller-name']",
         "//div[@id='sellerInfoUserName']//span",
         "//div[@id='sellerInfo']//span[contains(@class,'titleM')]"
+      ],
+      "xpathListAgro": [
+        "//section[@id='seller_info']//strong[contains(@class,'size20')]",
+        "//section[@id='seller_info']//span[contains(@class,'size20') and contains(@class,'bold')]"
       ]
     },
     {
@@ -58,6 +89,9 @@
         "//div[contains(@class,'seller-info-location')]",
         "//div[@id='basicInfoTableMainInfoGeo']//span",
         "//div[@id='basicInfo']//div[contains(@id,'Geo')]//span"
+      ],
+      "xpathListAgro": [
+        "//div[contains(@class,'auto-head_base')]"
       ]
     },
     {
@@ -67,6 +101,9 @@
         "//span[@class='date-created']",
         "//div[contains(@class,'publication-date')]",
         "//span[contains(@class,'auto-date')]"
+      ],
+      "xpathListAgro": [
+        "//span[contains(text(),'Объявление создано')]/following::span[1]"
       ]
     },
     {
@@ -78,6 +115,9 @@
         "//div[contains(@class,'price_value')]",
         "//div[@id='basicInfoPrice']//strong",
         "//div[@id='sidePrice']//strong"
+      ],
+      "xpathListAgro": [
+        "//div[contains(@class,'price')]//span[contains(@class,'price_value')]"
       ]
     }
   ],

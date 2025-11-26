@@ -1,1 +1,1 @@
-https://auto.ria.com/search/?search_type=1&category=1&all[0].any[0].year[0]=2022&all[1].any[0].fuel[0]=11&all[1].any[0].fuel[1]=5&all[1].any[0].fuel[2]=10&abroad=0&customs_cleared=1&page=0&limit=100
+https://agro.ria.com/ru/search/?category_id=1&currencyId=1&priceTo=500&tag_id=4

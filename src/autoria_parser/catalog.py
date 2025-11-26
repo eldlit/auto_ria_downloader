@@ -31,16 +31,21 @@ DENIED_ERROR_PATTERNS = [
 class CatalogCrawler:
     """Downloads catalog pages, walks pagination, and extracts listing URLs."""
 
-    def __init__(self, config: AppConfig, manager: PlaywrightSessionManager) -> None:
+    def __init__(self, config: AppConfig, manager: PlaywrightSessionManager, site_label: str = "auto.ria.com") -> None:
         self._config = config
         self._manager = manager
+        self._site_label = site_label
         parsing = config.parsing
         self._page_timeout = parsing.pageLoadTimeout or 30_000
         self._pagination_wait_timeout = parsing.waitForPaginationTimeout or 5_000
+        self._ready_wait_timeout = self._pagination_wait_timeout if "agro.ria.com" in self._site_label else self._page_timeout
+        self._pagination_wait_timeout_effective = 2_000 if "agro.ria.com" in self._site_label else self._pagination_wait_timeout
         self._delay_min = parsing.delayBetweenRequests.min
         self._delay_max = parsing.delayBetweenRequests.max
-        self._catalog_locators = [f"xpath={xp}" for xp in config.catalogXpaths if xp.strip()]
-        self._pagination_locators = [f"xpath={xp}" for xp in config.paginationXpaths if xp.strip()]
+        self._catalog_locators = self._resolve_catalog_locators(config)
+        self._pagination_locators = self._resolve_pagination_locators(config)
+        self._catalog_ready_selectors = self._resolve_catalog_ready_selectors()
+        self._pagination_fallback_selector = self._resolve_pagination_fallback()
         self._desired_page_size = parsing.listingsPerPage
 
     async def crawl(self, catalog_urls: Sequence[str]) -> List[str]:
@@ -119,8 +124,9 @@ class CatalogCrawler:
 
     async def _crawl_single_catalog(self, page: Page, url: str) -> Set[str]:
         url = self._apply_page_size(url)
+        wait_until = "load" if "agro.ria.com" in self._site_label else "domcontentloaded"
         try:
-            await page.goto(url, timeout=self._page_timeout, wait_until="domcontentloaded")
+            await page.goto(url, timeout=self._page_timeout, wait_until=wait_until)
         except PlaywrightTimeoutError:
             raise
         except PlaywrightError as exc:
@@ -137,7 +143,10 @@ class CatalogCrawler:
                 logger.debug("Detected repeated catalog page (%s); stopping pagination loop", canonical_url)
                 break
             pages_seen.add(canonical_url)
+            before = len(catalog_links)
             catalog_links.update(await self._extract_catalog_links(page))
+            added = len(catalog_links) - before
+            logger.info("Catalog page %s extracted %s new link(s) (total %s)", canonical_url, added, len(catalog_links))
             has_next = await self._go_to_next_page(page)
             if not has_next:
                 break
@@ -174,24 +183,30 @@ class CatalogCrawler:
         return await self._navigate_to_url(page, next_url)
 
     async def _wait_for_catalog_ready(self, page: Page) -> None:
-        try:
-            await page.wait_for_selector(ITEMS_CONTAINER_SELECTOR, timeout=self._page_timeout, state="visible")
-        except PlaywrightTimeoutError:
-            logger.warning("Items list selector %s not found on %s", ITEMS_CONTAINER_SELECTOR, page.url)
+        for selector in self._catalog_ready_selectors:
+            try:
+                await page.wait_for_selector(selector, timeout=self._ready_wait_timeout, state="visible")
+                break
+            except PlaywrightTimeoutError:
+                continue
 
-        await self._wait_for_any_selector(page, self._pagination_locators, fallback_selector=PAGINATION_FALLBACK_SELECTOR)
+        await self._wait_for_any_selector(
+            page,
+            self._pagination_locators,
+            fallback_selector=self._pagination_fallback_selector or PAGINATION_FALLBACK_SELECTOR,
+        )
 
     async def _wait_for_any_selector(self, page: Page, selectors: Sequence[str], fallback_selector: Optional[str] = None) -> None:
         for selector in selectors:
             try:
-                await page.wait_for_selector(selector, timeout=self._pagination_wait_timeout, state="visible")
+                await page.wait_for_selector(selector, timeout=self._pagination_wait_timeout_effective, state="visible")
                 return
             except PlaywrightTimeoutError:
                 continue
 
         if fallback_selector:
             try:
-                await page.wait_for_selector(fallback_selector, timeout=self._pagination_wait_timeout, state="visible")
+                await page.wait_for_selector(fallback_selector, timeout=self._pagination_wait_timeout_effective, state="visible")
                 return
             except PlaywrightTimeoutError:
                 pass
@@ -236,6 +251,14 @@ class CatalogCrawler:
                     return True
             except PlaywrightTimeoutError:
                 continue
+        # Agro fallback: propositions under search-results
+        if "agro.ria.com" in self._site_label:
+            agro_locator = page.locator("xpath=//div[@class='search-results']//div[contains(@class,'proposition')]")
+            try:
+                if await agro_locator.count() > 0:
+                    return True
+            except PlaywrightTimeoutError:
+                pass
         return False
 
     def _compute_next_page_url(self, current_url: str) -> Optional[str]:
@@ -247,7 +270,11 @@ class CatalogCrawler:
             except ValueError:
                 current_page = -1
         else:
-            current_page = -1
+            # Agro uses page=2 as the first paginated page; auto starts at 1.
+            if "agro.ria.com" in self._site_label:
+                current_page = 1
+            else:
+                current_page = 0
 
         next_page = current_page + 1
         return self._build_url_with_page(current_url, next_page)
@@ -293,8 +320,9 @@ class CatalogCrawler:
         await self._delay_between_requests()
         previous_url = page.url
         target = self._apply_page_size(target)
+        wait_until = "load" if "agro.ria.com" in self._site_label else "domcontentloaded"
         try:
-            await page.goto(target, timeout=self._page_timeout, wait_until="domcontentloaded")
+            await page.goto(target, timeout=self._page_timeout, wait_until=wait_until)
         except PlaywrightTimeoutError:
             logger.warning("Timed out while navigating to %s; continuing with partial load.", target)
         except PlaywrightError as exc:
@@ -315,9 +343,10 @@ class CatalogCrawler:
 
     async def _post_navigation(self, page: Page, previous_url: str) -> bool:
         try:
-            await page.wait_for_load_state("networkidle", timeout=self._page_timeout)
+            state = "load" if "agro.ria.com" in self._site_label else "domcontentloaded"
+            await page.wait_for_load_state(state, timeout=self._page_timeout)
         except PlaywrightTimeoutError:
-            logger.warning("Timed out waiting for networkidle after navigation; falling back to selector checks.")
+            logger.warning("Timed out waiting for %s after navigation; falling back to selector checks.", state)
 
         await self._wait_for_catalog_ready(page)
 
@@ -388,6 +417,8 @@ class CatalogCrawler:
         return False
 
     def _apply_page_size(self, url: str) -> str:
+        if "agro.ria.com" in self._site_label:
+            return url
         if not self._desired_page_size:
             return url
         parsed = urlparse(url)
@@ -395,6 +426,49 @@ class CatalogCrawler:
         query["limit"] = [str(self._desired_page_size)]
         new_url = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
         return new_url
+
+    def _resolve_catalog_locators(self, config: AppConfig) -> List[str]:
+        if "agro.ria.com" in self._site_label:
+            agro_custom = [f"xpath={xp}" for xp in getattr(config, "catalogXpathsAgro", []) if xp.strip()]
+            agro_fallback = [
+                "xpath=//div[contains(@class,'search-results')]//div[contains(@class,'proposition')]//a[contains(@class,'proposition_link')]",
+                "xpath=//div[contains(@class,'na-gallery-view')]//div[contains(@class,'proposition')]//a[contains(@class,'proposition_link')]",
+            ]
+            return agro_custom if agro_custom else agro_fallback
+
+        custom = [f"xpath={xp}" for xp in config.catalogXpaths if xp.strip()]
+        agro_fallback = [
+            "xpath=//div[@class='search-results']//div[contains(@class,'proposition')]//a[contains(@class,'proposition_link')]",
+            "xpath=//div[contains(@class,'na-gallery-view')]//div[contains(@class,'proposition')]//a[contains(@class,'proposition_link')]",
+        ]
+        auto_fallback = [
+            "xpath=//a[@data-car-id]",
+            "xpath=//section[contains(@class,'proposition')]//a[contains(@class,'proposition_link')]",
+        ]
+        if "agro.ria.com" in self._site_label:
+            return custom + agro_fallback if custom else agro_fallback
+        return custom if custom else auto_fallback
+
+    def _resolve_pagination_locators(self, config: AppConfig) -> List[str]:
+        if "agro.ria.com" in self._site_label:
+            custom_agro = [f"xpath={xp}" for xp in getattr(config, "paginationXpathsAgro", []) if xp.strip()]
+            agro_default = [
+                "xpath=//div[contains(@class,'pager')]//a[contains(@href,'page=')]",
+                "xpath=//span[contains(@class,'page-item')]/a[contains(@href,'page=')]",
+            ]
+            return custom_agro if custom_agro else agro_default
+        custom = [f"xpath={xp}" for xp in config.paginationXpaths if xp.strip()]
+        return custom
+
+    def _resolve_catalog_ready_selectors(self) -> List[str]:
+        if "agro.ria.com" in self._site_label:
+            return []
+        return [ITEMS_CONTAINER_SELECTOR]
+
+    def _resolve_pagination_fallback(self) -> Optional[str]:
+        if "agro.ria.com" in self._site_label:
+            return "div.pager"
+        return PAGINATION_FALLBACK_SELECTOR
 
 
 def _is_denied_error(exc: Exception) -> bool:

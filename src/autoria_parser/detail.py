@@ -46,18 +46,41 @@ class ScrapeSummary:
 class ListingScraper:
     """Scrapes listing detail pages, reveals phone numbers, caches results, and deduplicates."""
 
-    def __init__(self, config: AppConfig, manager: PlaywrightSessionManager) -> None:
+    def __init__(self, config: AppConfig, manager: PlaywrightSessionManager, site_label: str = "auto.ria.com") -> None:
         self._config = config
         self._manager = manager
+        self._site_label = site_label
         parsing = config.parsing
         self._page_timeout = parsing.pageLoadTimeout or 30_000
         self._delay_min = parsing.delayBetweenRequests.min
         self._delay_max = parsing.delayBetweenRequests.max
-        self._phone_button_locators = [f"xpath={xp}" for xp in config.phoneButtonXpaths if xp.strip()]
+        self._phone_button_locators = self._resolve_phone_locators(config)
+        self._ready_selectors = self._resolve_ready_selectors()
         self._cache_enabled = config.cache.enabled and config.cache.cacheListings
         self._cache_dir = Path(config.cache.directory).expanduser()
         if self._cache_enabled:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _resolve_ready_selectors(self) -> List[str]:
+        if "agro.ria.com" in self._site_label:
+            return [
+                "xpath=//h1[contains(@class,'auto-head_title')]",
+                "xpath=//div[contains(@class,'auto-head')]",
+            ]
+        return [LISTING_READY_SELECTOR]
+
+    def _resolve_phone_locators(self, config: AppConfig) -> List[str]:
+        if "agro.ria.com" in self._site_label:
+            agro_custom = [f"xpath={xp}" for xp in getattr(config, "phoneButtonXpathsAgro", []) if xp.strip()]
+            agro_default = [
+                "xpath=//div[contains(@class,'sell-phone-btn')]//*[contains(text(),'Показать номер')]",
+                "xpath=//section[@id='seller_info']//span[contains(@class,'button') and contains(text(),'Показать номер')]",
+                "xpath=//button[contains(text(),'Показать номер')]",
+                "xpath=//span[contains(@class,'button') and contains(text(),'Показать номер')]",
+            ]
+            return agro_custom if agro_custom else agro_default
+        custom = [f"xpath={xp}" for xp in config.phoneButtonXpaths if xp.strip()]
+        return custom
 
     async def scrape(
         self,
@@ -151,23 +174,25 @@ class ListingScraper:
                 while attempt <= self._config.errorRetryTimes:
                     try:
                         record = await self._process_listing(page, url)
-                        if record is not None:
-                            normalized_phones = [_normalize_phone(p) for p in record.phones if _normalize_phone(p)]
-                            async with lock:
-                                if _should_skip_by_phone(dedupe, normalized_phones):
-                                    logger.info("Skipping listing %s due to duplicate phone", url)
-                                else:
-                                    dedupe.update(normalized_phones)
-                                    if on_batch:
-                                        batch.append(record)
-                                        if len(batch) >= batch_size:
-                                            chunk_to_flush = list(batch)
-                                            batch.clear()
-                                    else:
-                                        results.append(record)
-                                    progress["count"] += 1
-                                    processed = progress["count"]
+                        if record is None:
+                            logger.debug("Listing %s returned no data (skipped)", url)
                             break
+                        normalized_phones = [_normalize_phone(p) for p in record.phones if _normalize_phone(p)]
+                        async with lock:
+                            if _should_skip_by_phone(dedupe, normalized_phones):
+                                logger.info("Skipping listing %s due to duplicate phone", url)
+                            else:
+                                dedupe.update(normalized_phones)
+                                if on_batch:
+                                    batch.append(record)
+                                    if len(batch) >= batch_size:
+                                        chunk_to_flush = list(batch)
+                                        batch.clear()
+                                else:
+                                    results.append(record)
+                                progress["count"] += 1
+                                processed = progress["count"]
+                        break
                     except ProxyDeniedError as exc:
                         attempt += 1
                         logger.warning(
@@ -209,9 +234,23 @@ class ListingScraper:
             if _is_denied_error(exc):
                 raise ProxyDeniedError(str(exc))
             raise
-        await self._wait_for_listing_ready(page)
+        if "agro.ria.com" in self._site_label:
+            try:
+                await page.evaluate("document.body.style.zoom='0.25'")
+            except Exception:
+                pass
+        try:
+            html_preview = await page.content()
+            logger.debug("Detail page HTML loaded for %s (length=%s)", page.url, len(html_preview))
+        except Exception:
+            logger.debug("Failed to fetch page content for %s", page.url)
         await self._click_phone_button(page)
+        await self._wait_for_listing_ready(page)
         data = await self._extract_data_fields(page)
+
+        if not data.get("title"):
+            logger.info("Skipping listing without title: %s", page.url)
+            return None
 
         phone_raw = data.get("phone")
         popup_phone_needed = not phone_raw or ("X" in phone_raw)
@@ -220,8 +259,15 @@ class ListingScraper:
             if popup_phone:
                 data["phone"] = popup_phone
                 phone_raw = popup_phone
+            elif (tel_fallback := await self._extract_phone_from_modal(page)):
+                data["phone"] = tel_fallback
+                phone_raw = tel_fallback
 
         phones = _split_phones(phone_raw)
+
+        if not phones:
+            logger.info("Skipping listing without phone: %s", page.url)
+            return None
 
         result = ListingResult(url=page.url, data=data, phones=phones)
         if self._cache_enabled:
@@ -229,14 +275,39 @@ class ListingScraper:
         return result
 
     async def _wait_for_listing_ready(self, page: Page) -> None:
-        try:
-            await page.wait_for_selector(LISTING_READY_SELECTOR, timeout=self._page_timeout)
-        except PlaywrightTimeoutError:
-            logger.warning("Listing ready selector %s not found on %s", LISTING_READY_SELECTOR, page.url)
+        retries = 0
+        while retries <= 1:
+            for selector in self._ready_selectors:
+                try:
+                    await page.wait_for_selector(selector, timeout=self._page_timeout)
+                    return
+                except PlaywrightTimeoutError:
+                    continue
+            if retries == 0:
+                retries += 1
+                logger.info(
+                    "Listing ready selectors %s not found on %s; reloading once",
+                    self._ready_selectors,
+                    page.url,
+                )
+                try:
+                    await page.goto(page.url, timeout=self._page_timeout, wait_until="domcontentloaded")
+                    continue
+                except PlaywrightTimeoutError:
+                    logger.warning("Reload timed out while waiting for listing ready on %s", page.url)
+                    break
+                except PlaywrightError as exc:
+                    logger.warning("Reload failed while waiting for listing ready on %s: %s", page.url, exc)
+                    break
+            break
+        logger.warning("Listing ready selectors %s not found on %s", self._ready_selectors, page.url)
 
     async def _click_phone_button(self, page: Page) -> None:
-        if await self._ensure_phone_popup_visible(page):
+        if await self._any_phone_visible(page, timeout=1_000):
+            logger.info("Phone already visible without click on %s", page.url)
             return
+
+        await self._wait_for_phone_button(page)
 
         for selector in self._phone_button_locators:
             locator = page.locator(selector)
@@ -245,11 +316,27 @@ class ListingScraper:
             except PlaywrightTimeoutError:
                 continue
             if count == 0:
+                logger.debug("No phone buttons found for selector %s on %s", selector, page.url)
                 continue
             try:
-                await locator.first.click(timeout=2_000)
-                if await self._ensure_phone_popup_visible(page):
-                    return
+                logger.debug("Found %s phone button candidate(s) with selector %s on %s", count, selector, page.url)
+                for idx in range(min(count, 3)):  # try a few matches
+                    target = locator.nth(idx)
+                    try:
+                        await target.scroll_into_view_if_needed(timeout=1_000)
+                    except Exception:
+                        pass
+                    try:
+                        logger.debug("Attempting phone button click selector=%s index=%s on %s", selector, idx, page.url)
+                        await target.click(timeout=3_000, force=True)
+                        logger.debug("Clicked phone button candidate %s (%s)", idx, selector)
+                    except PlaywrightTimeoutError:
+                        continue
+                    except Exception:
+                        continue
+                    if await self._any_phone_visible(page, timeout=3_000):
+                        logger.debug("Phone became visible after click on %s", page.url)
+                        return
             except PlaywrightTimeoutError:
                 continue
             except Exception:
@@ -265,7 +352,8 @@ class ListingScraper:
         return data
 
     async def _extract_single_field(self, page: Page, field: DataField) -> Optional[str]:
-        for xp in field.xpathList:
+        selectors = field.xpathListAgro if "agro.ria.com" in self._site_label and field.xpathListAgro else field.xpathList
+        for xp in selectors:
             selector = f"xpath={xp}"
             locator = page.locator(selector)
             try:
@@ -303,6 +391,60 @@ class ListingScraper:
             return popup
         except PlaywrightTimeoutError:
             return None
+
+    async def _extract_phone_from_modal(self, page: Page) -> Optional[str]:
+        selectors = [
+            "xpath=//div[contains(@class,'react_modal__body')]//a[starts-with(@href,'tel:')]",
+            "xpath=//div[@id='seller_info']//div[starts-with(@data-key,'phone')]//a[starts-with(@href,'tel:')]",
+        ]
+        for selector in selectors:
+            modal_tel = page.locator(selector)
+            try:
+                await modal_tel.first.wait_for(state="visible", timeout=5_000)
+                text = await modal_tel.first.text_content()
+                cleaned = _clean_text(text)
+                if cleaned:
+                    return cleaned
+            except PlaywrightTimeoutError:
+                continue
+            except Exception:
+                continue
+        return None
+
+    async def _any_phone_visible(self, page: Page, timeout: int) -> bool:
+        # Try legacy popup
+        popup = page.locator("div.popup-inner")
+        try:
+            await popup.wait_for(state="visible", timeout=timeout)
+            return True
+        except PlaywrightTimeoutError:
+            pass
+
+        modal_tel = page.locator("xpath=//div[contains(@class,'react_modal__body')]//a[starts-with(@href,'tel:')]")
+        inline_tel = page.locator(
+            "xpath=//div[@id='seller_info']//div[starts-with(@data-key,'phone')]//a[starts-with(@href,'tel:')]"
+        )
+        try:
+            await modal_tel.first.wait_for(state="visible", timeout=timeout)
+            return True
+        except PlaywrightTimeoutError:
+            pass
+
+        try:
+            await inline_tel.first.wait_for(state="visible", timeout=timeout)
+            return True
+        except PlaywrightTimeoutError:
+            return False
+
+    async def _wait_for_phone_button(self, page: Page) -> None:
+        for selector in self._phone_button_locators:
+            try:
+                await page.wait_for_selector(selector, timeout=2_000)
+                logger.debug("Phone button visible with selector %s on %s", selector, page.url)
+                return
+            except PlaywrightTimeoutError:
+                continue
+        logger.info("Phone button not immediately visible on %s", page.url)
 
     async def _load_from_cache(self, url: str) -> Optional[ListingResult]:
         if not self._cache_enabled:
